@@ -1,0 +1,67 @@
+# Reúne los datos cada hora y publica la web en GitHub Pages.
+name: Publicar Meteo Ambroz
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  datos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Europe/Madrid
+      AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # La caché de la ejecución anterior evita volver a pedir lo que aún está al día
+      # y permite servir el último dato bueno si una fuente falla.
+      - name: Recuperar la caché de datos
+        uses: actions/cache/restore@v6
+        with:
+          path: data/cache
+          key: datos-${{ github.run_id }}
+          restore-keys: datos-
+
+      - name: Reunir datos y generar la web
+        run: python3 server.py --snapshot
+
+      - name: Guardar la caché de datos
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: data/cache
+          key: datos-${{ github.run_id }}
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+  publicar:
+    needs: datos
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - id: despliegue
+        uses: actions/deploy-pages@v5

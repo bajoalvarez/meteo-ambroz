@@ -1,0 +1,40 @@
+# Una vez por semana añade al repositorio los días nuevos de la serie ERA5.
+# Además mantiene activo el repositorio: GitHub pausa las tareas programadas
+# de los repositorios públicos tras 60 días sin cambios.
+name: Actualizar histórico
+
+on:
+  schedule:
+    - cron: "40 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  historico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Europe/Madrid
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Descargar los días nuevos
+        run: python3 -c "import sys; sys.path.insert(0, '.'); from ambroz import history; h = history.update(); print(h['time'][-1])"
+
+      - name: Guardar en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/history/valle-era5.json
+          if git diff --cached --quiet; then
+            echo "Sin días nuevos"
+          else
+            git commit -m "Histórico ERA5: días nuevos"
+            git push
+          fi

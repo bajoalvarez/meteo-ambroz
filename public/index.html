@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meteo Ambroz</title>
+<meta name="description" content="El tiempo de Hervás, Baños de Montemayor, La Garganta, Gargantilla, Aldeanueva del Camino, Segura de Toro, Casas del Monte y Abadía: media ponderada de 10 modelos y AEMET, estaciones, embalses, mapas e histórico desde 1940.">
+<meta name="theme-color" content="#1d6a54">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Inter:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="assets/css/app.css">
+<script>
+  try { var t = JSON.parse(localStorage.getItem('ma.theme')); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#ahora" aria-label="Meteo Ambroz, inicio">
+      <svg class="logo" viewBox="0 0 40 40" width="34" height="34" aria-hidden="true">
+        <circle cx="27" cy="13" r="6" fill="var(--logo-sun)"/>
+        <path d="M2 33 L13 16 L19 24 L24 18 L38 33 Z" fill="var(--logo-hill)"/>
+        <path d="M2 33 C10 30 16 34 22 31 S32 30 38 33 L38 38 L2 38Z" fill="var(--logo-river)"/>
+      </svg>
+      <span><b>Meteo Ambroz</b><small>Valle del Ambroz · Cáceres</small></span>
+    </a>
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones"></nav>
+    <div class="top-tools">
+      <span id="updated" class="updated"></span>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Actualizar datos" title="Actualizar datos"></button>
+      <button id="theme" class="icon-btn" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"></button>
+    </div>
+  </div>
+  <nav id="villages" class="vchips" aria-label="Pueblos del valle" hidden></nav>
+</header>
+<div id="alerts" class="alerts" hidden></div>
+<main id="view" class="view"></main>
+<footer class="page-foot">
+  <p><b>Meteo Ambroz</b> reúne la previsión de 10 modelos (vía <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>), la predicción y los avisos de <a href="https://www.aemet.es/" target="_blank" rel="noopener">AEMET</a>, estaciones de <a href="https://www.meteoclimatic.net/" target="_blank" rel="noopener">Meteoclimatic</a>, embalses de <a href="https://www.embalses.net/" target="_blank" rel="noopener">embalses.net</a> y el reanálisis ERA5 de Copernicus.</p>
+  <p>Es una herramienta informativa: ante avisos, sigue siempre las indicaciones oficiales de AEMET y Protección Civil.</p>
+</footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
