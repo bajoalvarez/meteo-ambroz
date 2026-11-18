@@ -63,7 +63,8 @@ def extras():
 
 
 def ensemble():
-    return _get("ensemble", config.TTL["ensemble"], openmeteo.fetch_ensemble)
+    # "ensemble2": desde que guarda la lluvia de cada escenario (las copias anteriores no la tienen).
+    return _get("ensemble2", config.TTL["ensemble"], openmeteo.fetch_ensemble, "ensemble")
 
 
 def skill():
