@@ -17,6 +17,9 @@ const nf1f = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1, minimumF
 
 export const num = (x, d = 1) => (x == null || Number.isNaN(x) ? '–' : d === 0 ? nf0.format(x) : nf1.format(x));
 export const num1 = (x) => (x == null ? '–' : nf1f.format(x));
+const nf2f = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+export const num2 = (x) => (x == null ? '–' : nf2f.format(x));
+export const signed2 = (x) => (x == null ? '–' : `${x > 0 ? '+' : x < 0 ? '−' : '±'}${nf2f.format(Math.abs(x))}`);
 export const temp = (x) => (x == null ? '–' : `${nf0.format(Math.round(x))}°`);
 export const temp1 = (x) => (x == null ? '–' : `${nf1f.format(x)}°`);
 export const mm = (x) => (x == null ? '–' : x < 0.05 ? '0 mm' : x < 10 ? `${nf1.format(x)} mm` : `${nf0.format(x)} mm`);

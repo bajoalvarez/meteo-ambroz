@@ -70,8 +70,10 @@ escribe todos los datos en `public/api/` y la carpeta `public/` queda lista para
 - **Histórico**: últimos 7, 30 o 92 días; comparación entre pueblos; año hidrológico;
   últimos 24 meses frente a lo normal; franjas de temperatura desde 1940; lluvia anual,
   temperatura media y días de helada; récords absolutos, del mes y de hoy.
-- **Embalses**: Baños, Gabriel y Galán, Guijo de Granadilla y Valdeobispo, con el boletín
-  semanal, la lectura en tiempo real y la evolución del último año.
+- **Embalses**: Baños, Gabriel y Galán, Guijo de Granadilla y Valdeobispo en tiempo real
+  (SAIH Tajo, cada hora): agua embalsada, cambio en la última hora y en 24 horas, caudal que
+  se suelta, evolución de los últimos días y lluvia en los pluviómetros cercanos. El boletín
+  semanal del Ministerio queda como referencia plegada.
 - **Fuentes**: estado de cada fuente, método de cálculo y enlaces a otras webs.
 
 ## Cómo se calcula la media ponderada

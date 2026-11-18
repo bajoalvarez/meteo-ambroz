@@ -1,7 +1,7 @@
 // Mapas con Leaflet: relieve del valle, temperatura de cada pueblo, radar de lluvia
 // (RainViewer), estaciones y embalses.
 import { wx, ui } from './icons.js';
-import { temp, mm, kmh, esc, tempRGB, inkOn, num, agoIso } from './util.js';
+import { temp, mm, kmh, esc, tempRGB, inkOn, num, num2, agoIso } from './util.js';
 
 const VALLEY = [40.272, -5.9];
 
@@ -101,8 +101,13 @@ export function drawStations(ctl, obs) {
 export function drawReservoirs(ctl, data) {
   ctl.reservoirs.clearLayers();
   for (const r of data?.items || []) {
-    const icon = L.divIcon({ className: 'rmark-wrap', html: `<span class="rmark">${ui('drop', 13)}<b>${Math.round(r.pct)} %</b></span>`, iconSize: null });
-    L.marker([r.lat, r.lon], { icon }).bindPopup(`<b>Embalse de ${esc(r.name)}</b><br>${num(r.hm3, 0)} de ${num(r.capacity, 0)} hm³ (${num(r.pct)} %)<br><small>${esc(r.where)}</small>`).addTo(ctl.reservoirs);
+    const rt = r.rt;
+    const pct = rt?.pct ?? r.pct;
+    const icon = L.divIcon({ className: 'rmark-wrap', html: `<span class="rmark">${ui('drop', 13)}<b>${Math.round(pct)} %</b></span>`, iconSize: null });
+    const now = rt
+      ? `${num2(rt.hm3)} de ${num(r.capacity, 0)} hm³ (${num(rt.pct, 1)} %)<br>Lectura de las ${rt.time.slice(11, 16)}${rt.outflow ? ` · soltando ${rt.outflow.m3s < 10 ? num2(rt.outflow.m3s) : num(rt.outflow.m3s, 0)} m³/s` : ''}`
+      : `${num(r.hm3, 0)} de ${num(r.capacity, 0)} hm³ (${num(r.pct)} %), boletín semanal`;
+    L.marker([r.lat, r.lon], { icon }).bindPopup(`<b>Embalse de ${esc(r.name)}</b><br>${now}<br><small>${esc(r.where)}</small><br><a href="#embalses">Ver en tiempo real</a>`).addTo(ctl.reservoirs);
   }
 }
 

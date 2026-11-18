@@ -1,6 +1,6 @@
 // Meteo Ambroz · interfaz. Vistas: ahora, previsión, modelos, mapa, histórico, embalses y fuentes.
 import {
-  $, $$, esc, num, num1, temp, temp1, mm, pct, kmh, signed, dayLabel, dateShort, dateLong, weekdayShort,
+  $, $$, esc, num, num1, num2, signed2, temp, temp1, mm, pct, kmh, signed, dayLabel, dateShort, dateLong, weekdayShort,
   hourLabel, ts, ago, agoIso, dirName, dirLong, skyFamily, tempColor, tempRGB, inkOn, anomColor, rainRGB,
   store, MONTHS, MONTHS_SHORT, cap, parseLocal,
 } from './util.js';
@@ -1262,46 +1262,110 @@ function drawHistoryCharts(s) {
 }
 
 // --- Vista: Embalses ---------------------------------------------------------------
+// Protagonista: la última lectura automática del SAIH Tajo. El boletín semanal queda como nota.
+function minutesAgo(localIso) {
+  return Math.max(0, Math.round((Date.now() - parseLocal(localIso).getTime()) / 60000));
+}
+function agoShort(min) {
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} días`;
+}
+function whenShort(localIso) {
+  const d = parseLocal(localIso);
+  const today = new Date();
+  const same = d.toDateString() === today.toDateString();
+  return same ? localIso.slice(11, 16) : `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${localIso.slice(11, 16)}`;
+}
+
+// Desde cuándo se mantiene el caudal actual (±25 %) y cuál era el anterior.
+function outflowSince(series) {
+  if (!series?.length) return null;
+  const last = series[series.length - 1];
+  const near = (v) => v != null && Math.abs(v - last.m3s) <= Math.max(0.25 * last.m3s, 0.1);
+  let k = series.length - 1;
+  while (k > 0 && near(series[k - 1].m3s)) k--;
+  return { since: series[k].time, before: k > 0 ? series[k - 1].m3s : null, changed: k > 0 };
+}
+
 async function viewWater(main, alive) {
-  main.innerHTML = loading('Leyendo los embalses…');
-  const res = await api('embalses.json', 60 * 60 * 1000);
+  main.innerHTML = loading('Leyendo los embalses en tiempo real…');
+  const res = await api('embalses.json', 15 * 60 * 1000);
   if (!alive()) return;
   const items = res.data?.items || [];
+  const newest = items.map((r) => r.rt?.time).filter(Boolean).sort().pop();
   main.innerHTML = `
-    <section class="section-head"><h1>Embalses de la zona</h1>
-      <p>El agua embalsada en el propio valle (Baños) y en el sistema del Alagón, con el boletín semanal del Ministerio y las lecturas en tiempo real del SAIH Tajo. Actualizado ${ago(res.meta?.updated)}.</p></section>
+    <section class="section-head"><h1>Embalses en tiempo real</h1>
+      <p>Lecturas automáticas del SAIH Tajo (Confederación Hidrográfica del Tajo), que se publican cada hora: agua embalsada, caudal que se suelta y lluvia en los pluviómetros cercanos.
+      ${newest ? `Última lectura: <b>${whenShort(newest)}</b> (${agoShort(minutesAgo(newest))}).` : ''}</p></section>
     <div class="water-grid">${items.map(waterCard).join('')}</div>
-    ${res.data?.errors?.length ? `<p class="muted">${esc(res.data.errors.join(' · '))}</p>` : ''}`;
+    <p class="foot">Datos provisionales del SAIH, sin validar, recogidos por embalses.net. El boletín semanal del Ministerio (MITECO) se incluye solo como referencia.
+    ${res.data?.errors?.length ? esc(res.data.errors.join(' · ')) : ''}</p>`;
+
   items.forEach((r) => {
-    const el = document.getElementById(`wk-${r.id}`);
-    const wk = r.weekly.filter((w) => w.pct != null);
-    if (!wk.length) return;
-    keep(chart(el, {
-      x: wk.map((_, i) => i), noXAxis: false, marginLeft: 36,
-      xTicks: () => wk.map((w, i) => (i % 13 === 0 || i === wk.length - 1 ? { x: i, label: `sem ${w.w}` } : null)).filter(Boolean),
-      panels: [{ h: 100, label: '% lleno', min: 0, max: 100, ticks: 2, series: [{ type: 'area', y: wk.map((w) => w.pct), cls: 'area-water' }, { type: 'line', y: wk.map((w) => w.pct), cls: 'line-water' }] }],
-      hover: (i) => `<b>Semana ${wk[i].w} de ${wk[i].y}</b><br>${num(wk[i].hm3, 0)} hm³ · ${num(wk[i].pct)} %<br><small>Cambio semanal ${signed(wk[i].var, 1)} hm³</small>`,
-    }));
+    const rt = r.rt;
+    const el = document.getElementById(`rt-${r.id}`);
+    if (rt?.series?.length > 1 && el) {
+      const ser = rt.series;
+      keep(chart(el, {
+        x: ser.map((p) => ts(p.time)), xTicks: hourTicks, marginLeft: 44,
+        panels: [{ h: 112, label: 'Volumen hm³ (tiempo real)', minSpan: Math.max(0.2, (r.capacity || 10) * 0.01), series: [
+          { type: 'line', y: ser.map((p) => p.hm3), cls: 'line-water' },
+          { type: 'dots', y: ser.map((p) => p.hm3), cls: 'dot-water', r: 3 }] }],
+        hover: (i) => `<div class="tip-h"><b>${whenShort(ser[i].time)}</b></div><div class="tip-g"><span>Volumen</span><b>${num2(ser[i].hm3)} hm³</b><span>Lleno</span><b>${num2(ser[i].pct)} %</b></div>`,
+      }));
+    }
+    const wk = (r.weekly || []).filter((w) => w.pct != null);
+    const wel = document.getElementById(`wk-${r.id}`);
+    if (wk.length && wel) {
+      keep(chart(wel, {
+        x: wk.map((_, i) => i), marginLeft: 36,
+        xTicks: () => wk.map((w, i) => (i % 13 === 0 || i === wk.length - 1 ? { x: i, label: `sem ${w.w}` } : null)).filter(Boolean),
+        panels: [{ h: 90, label: '% lleno (boletín semanal)', min: 0, max: 100, ticks: 2, series: [{ type: 'area', y: wk.map((w) => w.pct), cls: 'area-water' }, { type: 'line', y: wk.map((w) => w.pct), cls: 'line-water' }] }],
+        hover: (i) => `<b>Semana ${wk[i].w} de ${wk[i].y}</b><br>${num(wk[i].hm3, 0)} hm³ · ${num(wk[i].pct)} %<br><small>Cambio semanal ${signed(wk[i].var, 1)} hm³</small>`,
+      }));
+    }
   });
 }
 
 function waterCard(r) {
-  const ch = (val, ref, label) => {
-    if (ref == null) return '';
-    const d = val - ref;
-    return `<div class="wchip ${d >= 0 ? 'up' : 'down'}"><span>${label}</span><b>${signed(d, 1)} pts</b><small>${num(ref, 1)} %</small></div>`;
+  const rt = r.rt;
+  const pctNow = rt?.pct ?? r.pct;
+  const hm3Now = rt?.hm3 ?? r.hm3;
+  const age = rt ? minutesAgo(rt.time) : null;
+  const live = rt
+    ? `<span class="live${age > 180 ? ' stale' : ''}" title="Lectura automática del SAIH Tajo"><i></i>${age > 180 ? 'Última lectura' : 'En directo'} · ${whenShort(rt.time)}<small>${agoShort(age)}</small></span>`
+    : '<span class="live stale"><i></i>Sin lectura en tiempo real</span>';
+  const trend = (c, label) => (c ? `<span class="${c.hm3 > 0 ? 'up' : c.hm3 < 0 ? 'down' : ''}">${c.hm3 > 0 ? '▲' : c.hm3 < 0 ? '▼' : '='} ${signed2(c.hm3)} hm³ ${label}</span>` : '');
+  const t24 = trend(rt?.chg_24h, rt?.chg_24h ? `en ${Math.round(rt.chg_24h.hours)} h` : '');
+  const t1 = trend(rt?.chg_1h, 'en la última hora');
+  const out = rt?.outflow;
+  const os = outflowSince(rt?.outflow_series);
+  const outTxt = out ? `<p class="wout">${ui('dam', 16)} <span>Soltando <b>${out.m3s < 10 ? num2(out.m3s) : num(out.m3s, 0)} m³/s</b>${os?.changed ? ` desde las ${os.since.slice(11, 16)}${parseLocal(os.since).toDateString() !== new Date().toDateString() ? ` del ${dateShort(os.since.slice(0, 10))}` : ''} <small>(antes ${os.before < 10 ? num2(os.before) : num(os.before, 0)} m³/s)</small>` : ''}</span></p>` : '';
+  const ch = (ref, label) => {
+    if (ref == null || pctNow == null) return '';
+    const d = pctNow - ref;
+    return `<div class="wchip ${d >= 0 ? 'up' : 'down'}"><span>${label}</span><b>${signed(d, 1)} pts</b><small>entonces ${num(ref, 1)} %</small></div>`;
   };
-  const rt = r.realtime?.[0];
+  const gauges = (rt?.gauges || []).slice(0, 5);
+  const gaugesHTML = gauges.length ? `<div class="gauges"><h3>Lluvia en pluviómetros cercanos <small>(l/m²)</small></h3>
+    <table><thead><tr><th>Pluviómetro</th><th>1 h</th><th>6 h</th><th>24 h</th></tr></thead><tbody>${gauges.map((g) => `<tr><td>${esc(g.name)}</td><td class="num">${num(g.h1, 1)}</td><td class="num">${num(g.h6, 1)}</td><td class="num"><b>${num(g.h24, 1)}</b></td></tr>`).join('')}</tbody></table></div>` : '';
   return `<article class="card water">
-    <header class="card-h"><h2>${esc(r.name)}</h2><a class="more" href="${esc(r.url)}" target="_blank" rel="noopener">embalses.net ${ui('external', 12)}</a></header>
-    <p class="muted small">${esc(r.where)}</p>
-    <div class="water-main">${tank(r.pct, r.last_year?.pct, r.avg10?.pct, 132)}
-      <div><p class="wpct">${num(r.pct, 1)} %</p><p>${num(r.hm3, 0)} de ${num(r.capacity, 0)} hm³</p>
-      <p class="wweek ${r.week_hm3 > 0 ? 'up' : r.week_hm3 < 0 ? 'down' : ''}">${signed(r.week_hm3, 0)} hm³ en la última semana</p>
-      <p class="muted small">Boletín del ${dateLong(r.date)}</p></div></div>
-    <div class="wchips">${ch(r.pct, r.last_year?.pct, `Frente a ${r.last_year?.year ?? 'hace un año'}`)}${ch(r.pct, r.avg10?.pct, 'Frente a la media de 10 años')}</div>
-    ${rt ? `<p class="rt">${ui('gauge', 14)} Tiempo real: <b>${num(rt.hm3, 2)} hm³ (${num(rt.pct, 1)} %)</b> a las ${rt.time.slice(11, 16)} del ${dateShort(rt.time.slice(0, 10))}</p>` : ''}
-    <div id="wk-${r.id}" class="wk-chart"></div>
+    <header class="card-h"><h2>${esc(r.name)}</h2>${live}</header>
+    <p class="muted small where">${esc(r.where)}</p>
+    <div class="water-main">${tank(pctNow, r.last_year?.pct, r.avg10?.pct, 132)}
+      <div class="wnow">
+        <p class="wpct">${num1(pctNow)} %</p>
+        <p class="whm3"><b>${rt ? num2(hm3Now) : num(hm3Now, 0)} hm³</b> de ${num(r.capacity, 0)}</p>
+        <p class="wtrend">${t24}${t1 ? ` ${t1}` : ''}</p>
+        ${outTxt}
+      </div></div>
+    <div id="rt-${r.id}" class="rt-chart"></div>
+    ${gaugesHTML}
+    <div class="wchips">${ch(r.avg10?.pct, 'Frente a la media de 10 años')}${ch(r.last_year?.pct, `Frente a ${r.last_year?.year ?? 'hace un año'}`)}</div>
+    <details class="bulletin"><summary>Boletín semanal del MITECO · ${dateShort(r.date)}: ${num(r.hm3, 0)} hm³ (${num(r.pct, 1)} %), ${signed(r.week_hm3, 0)} hm³ en la semana</summary>
+      <p class="small muted">Misma semana de ${r.last_year?.year ?? 'el año pasado'}: ${num(r.last_year?.pct, 1)} %. Media de 10 años: ${num(r.avg10?.pct, 1)} %. <a href="${esc(r.url)}" target="_blank" rel="noopener">Ficha en embalses.net ${ui('external', 12)}</a></p>
+      <div id="wk-${r.id}" class="wk-chart"></div></details>
   </article>`;
 }
 

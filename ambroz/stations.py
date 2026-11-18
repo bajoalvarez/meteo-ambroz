@@ -77,6 +77,70 @@ def _text(raw_html):
     return re.sub(r"\s+", " ", txt)
 
 
+def _table_after(raw, marker):
+    """Filas (listas de celdas de texto) de la primera tabla que sigue a un título."""
+    i = raw.find(marker)
+    if i < 0:
+        return []
+    table = raw[i:].split("</table>", 1)[0]
+    rows = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S):
+        cells = [re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", c))).strip().rstrip("%").strip()
+                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)]
+        if cells:
+            rows.append(cells)
+    return rows
+
+
+def _rt_time(s):
+    m = re.match(r"(\d\d)-(\d\d)-(\d{4})\s+(\d\d:\d\d)", s or "")
+    return "%s-%s-%sT%s" % (m.group(3), m.group(2), m.group(1), m.group(4)) if m else None
+
+
+def _realtime(raw, bulletin):
+    vol = []
+    for c in _table_after(raw, "(Tiempo Real)"):
+        t = _rt_time(c[0]) if c else None
+        if t and len(c) >= 3:
+            vol.append({"time": t, "hm3": _es_num(c[1]), "pct": _es_num(c[2])})
+    if not vol:
+        return None
+    vol.sort(key=lambda r: r["time"])
+    last = vol[-1]
+    t_last = dt.datetime.fromisoformat(last["time"])
+
+    def change(hours, tol):
+        best = None
+        for r in vol[:-1]:
+            gap = (t_last - dt.datetime.fromisoformat(r["time"])).total_seconds() / 3600
+            if abs(gap - hours) <= tol and (best is None or abs(gap - hours) < abs(best[1] - hours)):
+                best = (r, gap)
+        if not best or best[0]["hm3"] is None or last["hm3"] is None:
+            return None
+        return {"hm3": round(last["hm3"] - best[0]["hm3"], 2), "hours": round(best[1], 1), "since": best[0]["time"]}
+
+    outflow = []
+    for c in _table_after(raw, "(Caudal desembalsado)"):
+        t = _rt_time(c[0]) if c else None
+        if t and len(c) >= 2:
+            outflow.append({"time": t, "m3s": _es_num(c[1])})
+    outflow.sort(key=lambda r: r["time"])
+    gauges = []
+    for c in _table_after(raw, "Pluviómetros cercanos")[1:]:
+        if len(c) >= 6:
+            gauges.append({"name": c[0], "prov": c[1], "h1": _es_num(c[2]), "h6": _es_num(c[3]),
+                           "h12": _es_num(c[4]), "h24": _es_num(c[5])})
+    since = None
+    if bulletin.get("hm3") is not None and last["hm3"] is not None:
+        since = round(last["hm3"] - bulletin["hm3"], 2)
+    return {
+        "time": last["time"], "hm3": last["hm3"], "pct": last["pct"],
+        "chg_1h": change(1, 0.6), "chg_24h": change(24, 7), "since_bulletin": since,
+        "series": vol, "outflow": outflow[-1] if outflow else None, "outflow_series": outflow,
+        "gauges": gauges,
+    }
+
+
 def reservoir(r):
     raw = net.http_get("https://www.embalses.net/" + r["page"]).decode("utf-8", "replace")
     txt = _text(raw)
@@ -97,19 +161,8 @@ def reservoir(r):
     m = re.search(r"Misma Semana \(Med\. 10 Años\):\s*" + num + r"\s*hm\s*3\s*" + num + r"\s*%", txt)
     out["avg10"] = {"hm3": _es_num(m.group(1)), "pct": _es_num(m.group(2))} if m else None
 
-    # Lecturas en tiempo real (SAIH), primera tabla de la página.
-    rt = []
-    seg = raw.split("(Tiempo Real)", 1)
-    if len(seg) == 2:
-        table = seg[1].split("</table>", 1)[0]
-        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S):
-            cells = [re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", c)).strip().rstrip("%").strip()
-                     for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
-            if len(cells) >= 3 and re.match(r"\d\d-\d\d-\d{4} \d\d:\d\d", cells[0]):
-                d, mo, y = cells[0][:10].split("-")
-                rt.append({"time": "%s-%s-%sT%s" % (y, mo, d, cells[0][11:16]), "hm3": _es_num(cells[1]),
-                           "pct": _es_num(cells[2])})
-    out["realtime"] = rt[:12]
+    # Tiempo real (SAIH Tajo): volumen, caudal desembalsado y pluviómetros cercanos.
+    out["rt"] = _realtime(raw, out)
 
     # Variaciones semanales del último año → reconstrucción del volumen hacia atrás.
     weeks = re.findall(r"Semana (\d+) · (\d{4}) Variación:\s*" + num + r"\s*hm³(?: Variación media histórica:\s*"

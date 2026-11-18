@@ -28,8 +28,8 @@ SOURCES = [
      "what": "Avisos amarillos, naranjas y rojos de la zona Norte de Cáceres."},
     {"id": "meteoclimatic", "name": "Estaciones de aficionados", "via": "Meteoclimatic",
      "url": "https://www.meteoclimatic.net/", "what": "Observaciones en tiempo real a menos de 45 km."},
-    {"id": "embalses", "name": "Embalses", "via": "embalses.net (datos del MITECO y SAIH Tajo)",
-     "url": "https://www.embalses.net/", "what": "Agua embalsada semanal y lecturas en tiempo real."},
+    {"id": "embalses", "name": "Embalses en tiempo real", "via": "SAIH Tajo y MITECO, a través de embalses.net",
+     "url": "https://www.embalses.net/", "what": "Volumen y desembalse cada hora, pluviómetros cercanos y boletín semanal."},
     {"id": "recent", "name": "Últimos 92 días", "via": "Open-Meteo (análisis de modelos)",
      "url": "https://open-meteo.com/", "what": "Temperatura, lluvia, viento y presión día a día en cada pueblo."},
     {"id": "history", "name": "Serie histórica desde 1940", "via": "ERA5 (Copernicus) vía Open-Meteo",
@@ -238,7 +238,8 @@ def history_view(vid):
 
 
 def reservoirs():
-    data, meta = _get("embalses", config.TTL["embalses"], stations.reservoirs)
+    # "embalses2": desde que guarda las lecturas en tiempo real del SAIH (las copias anteriores no).
+    data, meta = _get("embalses2", config.TTL["embalses"], stations.reservoirs, "embalses")
     return {"generated": blend.now_local().isoformat(timespec="seconds"), "data": data, "meta": meta}
 
 

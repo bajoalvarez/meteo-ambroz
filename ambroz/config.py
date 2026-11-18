@@ -117,7 +117,7 @@ TTL = {
     "meteoalarm": 30 * 60,
     "meteoclimatic": 10 * 60,
     "aemet_obs": 30 * 60,
-    "embalses": 6 * 60 * 60,
+    "embalses": 30 * 60,  # el SAIH publica lecturas cada hora
     "q15": 30 * 60,
     "raingrid": 2 * 60 * 60,
 }
