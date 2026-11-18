@@ -131,10 +131,11 @@ def snapshot(out_dir):
     if missing:
         raise SystemExit("Sin datos de modelos para: %s" % ", ".join(missing))
     jobs = [("overview.json", lambda: overview), ("embalses.json", api.reservoirs),
-            ("estaciones.json", api.observations), ("fuentes.json", api.sources)]
+            ("estaciones.json", api.observations)]
     for v in config.VILLAGES:
         jobs.append(("village/%s.json" % v["id"], lambda vid=v["id"]: api.village(vid)))
         jobs.append(("history/%s.json" % v["id"], lambda vid=v["id"]: api.history_view(vid)))
+    jobs.append(("fuentes.json", api.sources))  # al final, con el estado de todas las fuentes
     for name, fn in jobs:
         path = os.path.join(out_dir, name)
         os.makedirs(os.path.dirname(path), exist_ok=True)
