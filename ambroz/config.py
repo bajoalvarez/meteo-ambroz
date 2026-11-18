@@ -98,6 +98,14 @@ RECENT_DAILY_VARS = ["temperature_2m_max", "temperature_2m_min", "temperature_2m
                      "snowfall_sum", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant",
                      "pressure_msl_mean", "relative_humidity_2m_mean"]
 
+# ¿Lloverá? Ventanas de las próximas horas y umbral de lluvia apreciable (mm).
+RAIN_WINDOWS = [[1, 0.1], [6, 0.2], [12, 0.3], [24, 0.5]]
+# Modelo de alta resolución para la lluvia cada 15 minutos y el mapa de lluvia prevista.
+RAIN_MODEL = "meteofrance_seamless"
+RAIN_MODEL_NAME = "AROME / ARPEGE (Météo-France)"
+# Rejilla del mapa de lluvia prevista: 15 × 8 puntos cada ~10 km alrededor del valle.
+RAIN_GRID = {"lat0": 39.92, "lon0": -6.75, "dlat": 0.1, "dlon": 0.1214, "ny": 8, "nx": 15, "hours": 36}
+
 # Tiempo de vida de cada caché, en segundos.
 TTL = {
     "models": 60 * 60,
@@ -110,4 +118,6 @@ TTL = {
     "meteoclimatic": 10 * 60,
     "aemet_obs": 30 * 60,
     "embalses": 6 * 60 * 60,
+    "q15": 30 * 60,
+    "raingrid": 2 * 60 * 60,
 }

@@ -32,6 +32,7 @@ ROUTES = [
     (re.compile(r"^/api/village/([a-z-]+)\.json$"), lambda m: api.village(m.group(1))),
     (re.compile(r"^/api/history/([a-z-]+)\.json$"), lambda m: api.history_view(m.group(1))),
     (re.compile(r"^/api/embalses\.json$"), lambda m: api.reservoirs()),
+    (re.compile(r"^/api/lluvia\.json$"), lambda m: api.lluvia()),
     (re.compile(r"^/api/estaciones\.json$"), lambda m: api.observations()),
     (re.compile(r"^/api/fuentes\.json$"), lambda m: api.sources()),
 ]
@@ -130,7 +131,7 @@ def snapshot(out_dir):
     missing = [v["village"]["name"] for v in overview["villages"] if "error" in v]
     if missing:
         raise SystemExit("Sin datos de modelos para: %s" % ", ".join(missing))
-    jobs = [("overview.json", lambda: overview), ("embalses.json", api.reservoirs),
+    jobs = [("overview.json", lambda: overview), ("lluvia.json", api.lluvia), ("embalses.json", api.reservoirs),
             ("estaciones.json", api.observations)]
     for v in config.VILLAGES:
         jobs.append(("village/%s.json" % v["id"], lambda vid=v["id"]: api.village(vid)))

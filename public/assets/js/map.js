@@ -37,14 +37,14 @@ export function fitValley(ctl, points, pad = 24) {
   });
 }
 
-export function createMap(el, { zoom = 11, onSelect, full = false } = {}) {
+export function createMap(el, { zoom = 11, onSelect, full = false, base = null } = {}) {
   const map = L.map(el, { zoomControl: true, scrollWheelZoom: full, attributionControl: true, zoomSnap: 0.5 })
     .setView(VALLEY, zoom);
   const bases = {};
   for (const [name, mk] of Object.entries(BASES)) bases[name] = mk();
   const dark = document.documentElement.dataset.theme === 'dark' ||
     (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-  (full ? bases.Relieve : dark ? bases.Oscuro : bases.Relieve).addTo(map);
+  bases[base && bases[base] ? base : full ? 'Relieve' : dark ? 'Oscuro' : 'Relieve'].addTo(map);
   const villages = L.layerGroup().addTo(map);
   const stations = L.layerGroup();
   const reservoirs = L.layerGroup();

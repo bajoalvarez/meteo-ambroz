@@ -314,8 +314,12 @@ def blend(v, raw, skill, extras, ens, aemet_d, aemet_h, normals):
             "cloud": [_r(x, 0) for x in s["cloud_cover"][start:horizon]],
         }
 
+    rain = rain_outlook(times, S, W, H, i_now, ens, aemet_h, now)
+    nowinfo["rain_next3"] = rain["next3"]
+    nowinfo["rain_next24"] = next((w["mm"] for w in rain["windows"] if w["hours"] == 24), nowinfo["rain_next24"])
+
     return {
-        "now": nowinfo, "i_now": i_now,
+        "now": nowinfo, "i_now": i_now, "rain": rain,
         "hourly": dict(time=times, **H),
         "daily": daily,
         "models": {"start": start, "time": times[start:horizon], "series": model_series, "daily": model_daily},
@@ -486,6 +490,125 @@ def _daily(v, times, S, W, H, ends, factor, i_now, models, extras, ens, aemet_d,
 def _ri(x):
     """Redondeo "de toda la vida" (0,5 hacia arriba), igual que Math.round en la página."""
     return int(math.floor(x + 0.5))
+
+
+def _epoch(t):
+    return dt.datetime.fromisoformat(t).replace(tzinfo=TZ).timestamp()
+
+
+def _window_sum(arr, ends, t0, t1, i0, i1):
+    """Suma la lluvia horaria (cada valor acumula la hora anterior) que cae entre t0 y t1."""
+    total, seen = 0.0, False
+    for i in range(max(0, i0), min(i1, len(arr), len(ends))):
+        x = arr[i]
+        if x is None:
+            continue
+        overlap = min(ends[i], t1) - max(ends[i] - 3600, t0)
+        if overlap > 0:
+            total += x * overlap / 3600.0
+            seen = True
+    return total if seen else None
+
+
+def _pct(vals, q):
+    vals = sorted(vals)
+    if not vals:
+        return None
+    k = (len(vals) - 1) * q
+    f = int(k)
+    c = min(f + 1, len(vals) - 1)
+    return vals[f] + (vals[c] - vals[f]) * (k - f)
+
+
+def intensity(mm_h):
+    """Escala de AEMET para la intensidad de la lluvia (mm en una hora)."""
+    if mm_h is None or mm_h < 0.1:
+        return "sin lluvia"
+    if mm_h <= 2:
+        return "débil"
+    if mm_h <= 15:
+        return "moderada"
+    if mm_h <= 30:
+        return "fuerte"
+    if mm_h <= 60:
+        return "muy fuerte"
+    return "torrencial"
+
+
+def rain_outlook(times, S, W, H, i_now, ens, aemet_h, now):
+    """Probabilidad y cantidad de lluvia en la próxima hora y en las próximas 6, 12 y 24 horas."""
+    n = len(times)
+    lo, hi = max(0, i_now - 1), min(n, i_now + 52)
+    ends = [0.0] * n
+    for i in range(lo, hi):
+        ends[i] = _epoch(times[i])
+    t0 = now.timestamp()
+    a_int = []
+    for p in (aemet_h or {}).get("probs", []):
+        if p["tipo"] != "precipitacion":
+            continue
+        day = dt.datetime.fromisoformat(p["fecha"]).replace(tzinfo=TZ)
+        a, b = int(p["desde"]), int(p["hasta"])
+        start = day + dt.timedelta(hours=a)
+        end = day + dt.timedelta(hours=b + (24 if b <= a else 0))
+        a_int.append((start.timestamp(), end.timestamp(), p["valor"] / 100.0))
+    members = (ens or {}).get("members_p")
+    e_ends = [_epoch(t) for t in ens["members_time"]] if members else None
+
+    windows = []
+    for hours, thr in config.RAIN_WINDOWS:
+        t1 = t0 + hours * 3600
+        i0, i1 = i_now, min(n, i_now + hours + 2)
+        mid = min(n - 1, i_now + max(1, hours // 2))
+        sums = {}
+        for mid_id, s in S.items():
+            v = _window_sum(s["precipitation"], ends, t0, t1, i0, i1)
+            if v is not None and W[mid_id][mid] > 0:
+                sums[mid_id] = v
+        p_models = _wfrac([(sums[m], W[m][mid]) for m in sums], lambda x: x >= thr)
+        p_ens = e50 = e90 = None
+        if members:
+            vals = [_window_sum(mp, e_ends, t0, t1, 0, len(e_ends)) for mp in members]
+            vals = [x for x in vals if x is not None]
+            if vals:
+                p_ens = sum(1 for x in vals if x >= thr) / len(vals)
+                e50, e90 = _pct(vals, 0.5), _pct(vals, 0.9)
+        cands = [p for a, b, p in a_int if min(b, t1) - max(a, t0) > 0]
+        p_aemet = max(cands) if cands else None
+        parts = {"models": p_models, "ensemble": p_ens, "aemet": p_aemet}
+        tot = sum(config.POP_MIX[k] for k, x in parts.items() if x is not None)
+        pop = sum(config.POP_MIX[k] * x for k, x in parts.items() if x is not None) / tot if tot else None
+        amount = _window_sum(H["precip"], ends, t0, t1, i0, i1)
+        peak = max([(H["precip"][i] or 0) for i in range(i_now + 1, min(n, i_now + hours + 1))] or [0])
+        windows.append({
+            "hours": hours, "threshold": thr, "pop": _r(pop, 2), "parts": {k: _r(x, 2) for k, x in parts.items()},
+            "mm": _r(amount, 1), "mm_lo": _r(min(sums.values()), 1) if sums else None,
+            "mm_hi": _r(max(sums.values()), 1) if sums else None, "ens_p50": _r(e50, 1), "ens_p90": _r(e90, 1),
+            "peak": _r(peak, 1), "intensity": intensity(peak),
+        })
+
+    def wet(i):
+        return (H["precip"][i] or 0) >= 0.2 and (H["pop"][i] or 0) >= 0.5
+
+    timing = {"state": "seco", "from": None, "until": None, "peak": None}
+    j = i_now + 1
+    if j < n and wet(j):
+        k = j
+        while k < n and k < i_now + 48 and wet(k):
+            k += 1
+        timing.update(state="lloviendo", until=times[k - 1] if k < n else None)
+    else:
+        for k in range(j, min(n, i_now + 48)):
+            if wet(k):
+                timing["from"] = times[k - 1]
+                break
+    rng = range(i_now + 1, min(n, i_now + 25))
+    if rng:
+        ip = max(rng, key=lambda i: H["precip"][i] or 0)
+        if (H["precip"][ip] or 0) >= 0.1:
+            timing["peak"] = {"time": times[ip], "mm": _r(H["precip"][ip], 1), "intensity": intensity(H["precip"][ip])}
+    next3 = _window_sum(H["precip"], ends, t0, t0 + 3 * 3600, i_now, min(n, i_now + 5))
+    return {"windows": windows, "timing": timing, "next3": _r(next3, 1)}
 
 
 def _mean_list(xs):

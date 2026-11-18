@@ -59,6 +59,10 @@ escribe todos los datos en `public/api/` y la carpeta `public/` queda lista para
   24 horas, los 8 pueblos en un mapa, estaciones cercanas y "hoy en la historia".
 - **Previsión**: 16 días con máximas, mínimas, lluvia, probabilidad, rachas, confianza y
   comparación con lo normal; detalle por tramos del día y meteograma de 48 h, 7 o 16 días.
+- **Lluvia**: ¿lloverá en la próxima hora y en las próximas 6, 12 y 24 horas? Probabilidad,
+  cantidad e intensidad en cada pueblo, cuándo empieza o termina, lluvia cada 15 minutos
+  (AROME) y un mapa animado con el radar de las 2 últimas horas, su extrapolación para la
+  próxima hora y la lluvia prevista por AROME hasta 24 horas.
 - **Modelos**: pesos de cada modelo y por qué, error reciente medido, temperatura y lluvia
   acumulada de cada modelo, tabla día a día y probabilidades de los conjuntos.
 - **Mapa**: relieve, callejero o satélite; temperatura, lluvia o rachas por pueblo; radar
@@ -89,6 +93,21 @@ escribe todos los datos en `public/api/` y la carpeta `public/` queda lista para
    los conjuntos ECMWF, GEFS, ICON y GEM (35 %) y la probabilidad de AEMET (20 %).
 
 Los parámetros están en `ambroz/config.py`.
+
+## ¿Lloverá en las próximas horas?
+
+- **Probabilidad por ventana** (1, 6, 12 y 24 h): igual que la diaria (modelos 45 %,
+  conjuntos 35 %, AEMET 20 %), pero sumando la lluvia de cada modelo y de cada escenario
+  justo dentro de la ventana. Cuenta como lluvia: 0,1 mm en 1 h, 0,2 mm en 6 h, 0,3 mm en
+  12 h y 0,5 mm en 24 h.
+- **Radar** (en el navegador): RainViewer solo sirve gratis su paleta "Universal Blue", así
+  que cada color se traduce a dBZ con su tabla oficial y la lluvia a mm/h con la relación de
+  Marshall-Palmer. El movimiento de la lluvia se mide por correlación cruzada entre la imagen
+  actual y las de hace 10 y 20 minutos (ignorando los ecos inmóviles), y con él se desplaza la
+  imagen actual para los próximos 60 minutos. En la próxima hora, el radar pesa un 60 % y,
+  si ya está lloviendo en el pueblo, la probabilidad es al menos del 95 %.
+- **Mapa de lluvia prevista**: AROME/ARPEGE (Météo-France) en una rejilla de 15 × 8 puntos
+  (cada ~10 km) alrededor del valle, dibujada con la misma escala de colores que el radar.
 
 ## Fuentes
 

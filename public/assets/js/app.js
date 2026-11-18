@@ -7,12 +7,13 @@ import {
 import { wx, ui, windArrow, alertIcon } from './icons.js';
 import { chart, hourTicks, dayTicks, yearTicks, nightBands, stripes, tank } from './charts.js';
 import { createMap, fitValley, drawVillages, drawStations, drawReservoirs, addRadar, MAP_VARS } from './map.js';
+import { loadRadar, modelFrameURL, gridBounds, legendStops } from './radar.js';
 
 const VIEWS = {
-  ahora: 'Ahora', prevision: 'Previsión', modelos: 'Modelos', mapa: 'Mapa', historico: 'Histórico',
+  ahora: 'Ahora', prevision: 'Previsión', lluvia: 'Lluvia', modelos: 'Modelos', mapa: 'Mapa', historico: 'Histórico',
   embalses: 'Embalses', fuentes: 'Fuentes',
 };
-const VILLAGE_VIEWS = new Set(['ahora', 'prevision', 'modelos', 'historico']);
+const VILLAGE_VIEWS = new Set(['ahora', 'prevision', 'lluvia', 'modelos', 'historico']);
 const REFRESH_MS = 10 * 60 * 1000;
 
 const state = {
@@ -149,7 +150,7 @@ async function render() {
     return;
   }
   try {
-    const fn = { ahora: viewNow, prevision: viewForecast, modelos: viewModels, mapa: viewMap, historico: viewHistory, embalses: viewWater, fuentes: viewSources }[state.view];
+    const fn = { ahora: viewNow, prevision: viewForecast, lluvia: viewRain, modelos: viewModels, mapa: viewMap, historico: viewHistory, embalses: viewWater, fuentes: viewSources }[state.view];
     await fn(main, () => token === renderToken);
   } catch (err) {
     if (token !== renderToken) return;
@@ -206,6 +207,8 @@ async function viewNow(main, alive) {
       <header class="card-h"><h2>Próximas 24 horas</h2><a class="more" href="#prevision/${v.id}">Previsión completa →</a></header>
       <div class="hours" tabindex="0">${it.next24.map(hourCell).join('')}</div>
     </section>
+
+    ${it.rain ? rainMiniHTML(it) : ''}
 
     <section class="card tomorrow">
       <header class="card-h"><h2>${dayLabel(d1.date, d1.k)}, ${dateShort(d1.date)}</h2><span class="conf conf-${d1.conf_label}">confianza ${d1.conf_label}</span></header>
@@ -468,6 +471,275 @@ function drawMeteogram(vd) {
   });
   c.el = el;
   keep(c);
+}
+
+// --- Vista: ¿Lloverá? ------------------------------------------------------------
+const MAD = 'Europe/Madrid';
+const WIN_LABEL = { 1: 'Próxima hora', 6: 'Próximas 6 horas', 12: 'Próximas 12 horas', 24: 'Próximas 24 horas' };
+const WIN_SHORT = { 1: '1 hora', 6: '6 horas', 12: '12 horas', 24: '24 horas' };
+const popWord = (p) => (p == null ? '–' : p >= 0.85 ? 'Casi segura' : p >= 0.6 ? 'Probable' : p >= 0.35 ? 'Posible' : p >= 0.15 ? 'Poco probable' : 'No se espera');
+const hhmm = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: MAD });
+const madridMs = (s, off) => {
+  const [d, t] = s.split('T');
+  const [y, m, dd] = d.split('-').map(Number);
+  const [hh, mi] = t.split(':').map(Number);
+  return Date.UTC(y, m - 1, dd, hh, mi || 0) - off * 1000;
+};
+
+function nextDay(dateStr) {
+  const d = parseLocal(dateStr);
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// "2026-11-19T03:00" → "mañana a las 03:00"
+function whenText(s, today) {
+  if (!s) return '';
+  const day = s.slice(0, 10);
+  const hour = s.slice(11, 16);
+  if (day === today) return `las ${hour}`;
+  if (day === nextDay(today)) return `mañana a las ${hour}`;
+  return `el ${weekday(day)} a las ${hour}`;
+}
+
+function timingText(tm, today) {
+  if (!tm) return '';
+  const out = [];
+  if (tm.state === 'lloviendo') out.push(tm.until ? `Los modelos dan lluvia hasta ${whenText(tm.until, today)}` : 'Los modelos dan lluvia durante las próximas 48 horas');
+  else if (tm.from) out.push(`Los modelos prevén lluvia a partir de ${whenText(tm.from, today)}`);
+  else out.push('Los modelos no prevén lluvia en las próximas 48 horas');
+  if (tm.peak) out.push(`lo más intenso, hacia ${whenText(tm.peak.time, today)} (${mm(tm.peak.mm)} en una hora, ${tm.peak.intensity})`);
+  return `${out.join('; ')}.`;
+}
+
+function rainMiniHTML(it) {
+  const today = it.next24?.[0]?.time?.slice(0, 10) || '';
+  return `<section class="card rain-mini">
+    <header class="card-h"><h2>¿Lloverá?</h2><a class="more" href="#lluvia/${it.village.id}">Radar y detalle →</a></header>
+    <div class="rmini">${it.rain.windows.map((w) => `<div class="rmw${(w.pop || 0) >= 0.55 ? ' hi' : ''}" style="--p:${Math.round((w.pop || 0) * 100)}">
+      <span>${WIN_SHORT[w.hours]}</span><b>${pct(w.pop)}</b><small>${(w.mm || 0) >= 0.1 ? mm(w.mm) : 'seco'}</small></div>`).join('')}</div>
+    <p class="rmini-txt">${esc(timingText(it.rain.timing, today))}</p>
+  </section>`;
+}
+
+function combined1h(w, rv) {
+  if (!rv || w.hours !== 1) return w.pop;
+  const p = 0.6 * rv.p1h + 0.4 * (w.pop || 0);
+  return rv.raining ? Math.max(0.95, p) : p; // si ya llueve, lloverá en la próxima hora
+}
+
+function winTile(w, rv) {
+  const p = combined1h(w, rv);
+  const parts = [`modelos ${pct(w.parts.models)}`, `conjuntos ${pct(w.parts.ensemble)}`, `AEMET ${pct(w.parts.aemet)}`];
+  if (w.hours === 1 && rv) parts.unshift(`radar ${pct(rv.p1h)}`);
+  const range = w.mm_hi != null && w.mm_hi >= 0.5 ? `<small class="rw-range">entre modelos: ${mm(w.mm_lo)} a ${mm(w.mm_hi)}</small>` : '';
+  return `<div class="rwin${(p || 0) >= 0.55 ? ' hi' : ''}" style="--p:${Math.round((p || 0) * 100)}">
+    <span class="rw-label">${WIN_LABEL[w.hours]}</span>
+    <b class="rw-p">${pct(p)}</b>
+    <span class="rw-word">${popWord(p)}</span>
+    <span class="rw-mm">${(w.mm || 0) >= 0.05 ? mm(w.mm) : 'Sin lluvia'}${(w.peak || 0) >= 0.1 ? ` · ${w.intensity}` : ''}</span>
+    ${range}
+    <small class="rw-parts">${parts.join(' · ')}</small>
+  </div>`;
+}
+
+function rainStatusHTML(it, R, today) {
+  const rv = R?.at?.[it.village.id];
+  let icon = wx(it.now.sym, it.now.is_day, 64);
+  let head;
+  const sub = [];
+  if (rv) {
+    if (rv.raining) {
+      head = `Está lloviendo en ${esc(it.village.name)}${rv.nowLabel ? ` (${rv.nowLabel})` : ''}`;
+      icon = wx(rv.nowLabel === 'débil' ? 'lluvia-debil' : rv.nowLabel === 'moderada' ? 'lluvia' : 'lluvia-fuerte', it.now.is_day, 64);
+    } else if (rv.eta != null) {
+      head = `Ahora no llueve. Según el radar, la lluvia llegará en unos ${rv.eta} minutos`;
+    } else {
+      head = `Ahora no llueve en ${esc(it.village.name)}`;
+    }
+    sub.push(`Radar de las ${hhmm(R.lastTime)}${R.quality !== 'sin ecos' && R.speedKmh >= 3 ? `; la lluvia se mueve hacia el ${dirLong(R.heading)} a unos ${Math.round(R.speedKmh)} km/h` : ''}.`);
+  } else {
+    head = it.rain.timing.state === 'lloviendo' ? `Los modelos dan lluvia ahora en ${esc(it.village.name)}` : `Los modelos no dan lluvia ahora en ${esc(it.village.name)}`;
+  }
+  sub.push(timingText(it.rain.timing, today));
+  return `${icon}<div><p class="rs-head">${head}</p>${sub.map((t) => `<p class="rs-sub">${esc(t)}</p>`).join('')}</div>`;
+}
+
+function rainTableHTML(data, R) {
+  const rows = data.villages.filter((x) => !x.error).map((x) => {
+    const rv = R?.at?.[x.village.id];
+    const radar = R ? (rv?.raining ? `<span class="rchip on">${esc(rv.nowLabel || 'lluvia')}</span>` : rv?.eta != null ? `<span class="rchip near">en ${rv.eta} min</span>` : '<span class="rchip">no</span>') : '<span class="muted">…</span>';
+    const cells = x.rain.windows.map((w) => {
+      const p = combined1h(w, rv);
+      return `<td class="pc${(p || 0) >= 0.55 ? ' hi' : ''}" style="--p:${Math.round((p || 0) * 100)}">${pct(p)}<small>${(w.mm || 0) >= 0.1 ? mm(w.mm) : ''}</small></td>`;
+    }).join('');
+    return `<tr class="${x.village.id === state.village ? 'on' : ''}"><td><a href="#lluvia/${x.village.id}">${esc(x.village.name)}</a><small>${num(x.village.elev, 0)} m</small></td><td>${radar}</td>${cells}</tr>`;
+  }).join('');
+  return `<thead><tr><th>Pueblo</th><th>Radar ahora</th><th>1 hora</th><th>6 horas</th><th>12 horas</th><th>24 horas</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+async function viewRain(main, alive) {
+  main.innerHTML = loading('Mirando el radar y los modelos…');
+  const data = await api('lluvia.json', 5 * 60 * 1000);
+  if (!alive()) return;
+  const it = data.villages.find((x) => x.village.id === state.village && !x.error) || data.villages.find((x) => !x.error);
+  const v = it.village;
+  const today = data.now.slice(0, 10);
+  const grid = data.grid;
+  main.innerHTML = `
+    <section class="section-head"><h1>¿Va a llover en ${esc(v.name)}?</h1>
+      <p>El radar de las dos últimas horas, su extrapolación para la próxima hora y la lluvia que prevén los modelos hasta dentro de 24 horas.</p></section>
+    <section class="card rain-top">
+      <div class="rain-status" id="rain-status">${rainStatusHTML(it, null, today)}</div>
+      <div class="rain-wins" id="rain-wins">${it.rain.windows.map((w) => winTile(w, null)).join('')}</div>
+      <p class="foot">Cuenta como lluvia: al menos 0,1 mm en una hora, 0,2 mm en 6 horas, 0,3 mm en 12 horas o 0,5 mm en 24 horas.
+      La probabilidad combina los 10 modelos, los 143 escenarios de los conjuntos y AEMET; en la próxima hora pesa además el radar (60 %).</p>
+    </section>
+    <section class="card">
+      <header class="card-h"><h2>Radar y lluvia prevista</h2><span class="hint" id="rmove">Cargando el radar…</span></header>
+      <div class="rain-tools">
+        <button class="icon-btn" id="rplay" type="button" aria-label="Reproducir la animación" disabled>${ui('play', 16)}</button>
+        <div class="rtrack">
+          <input type="range" id="rslider" min="0" max="0" value="0" aria-label="Momento del mapa" disabled>
+          <div class="segbar" id="segbar"></div>
+        </div>
+        <span class="rtime" id="rtime">–</span>
+      </div>
+      <div id="rain-map" class="rain-map"></div>
+      <div class="rain-legend"><span class="muted">Intensidad</span>${legendStops().map((st) => `<span><i style="background:${st.css}"></i>${num(st.mmh)}</span>`).join('')}<span class="muted">mm/h</span></div>
+      <p class="foot">Pasado y presente: mosaico de radares de RainViewer (imágenes cada 10 minutos). Próxima hora: la imagen actual desplazada según el movimiento medido en los últimos 20 minutos; no prevé lluvia que se forme o se deshaga. Desde la segunda hora: lluvia prevista por ${esc(data.model)} en una rejilla de 10 km (recuadro discontinuo).</p>
+    </section>
+    <section class="card">
+      <header class="card-h"><h2>Cuánto y cuándo en ${esc(v.name)}</h2><span class="hint">Pasa el dedo o el ratón por las barras</span></header>
+      <h3 class="sub tight">Próximas horas, cada 15 minutos (AROME)</h3>
+      <div id="q15-chart"></div>
+      <h3 class="sub tight">Próximas 24 horas (media de los modelos)</h3>
+      <div id="h24-chart"></div>
+    </section>
+    <section class="card">
+      <header class="card-h"><h2>Los 8 pueblos</h2><span class="hint">Probabilidad de lluvia y cantidad prevista</span></header>
+      <div class="table-wrap"><table class="rain-table" id="rain-table">${rainTableHTML(data, null)}</table></div>
+    </section>`;
+
+  // Gráficos de cantidad
+  const q = it.q15;
+  if (q.time.length) {
+    keep(chart($('#q15-chart'), {
+      x: q.time.map(ts), xTicks: hourTicks,
+      panels: [{ h: 110, label: 'mm en 15 min', min: 0, minSpan: 0.5, series: [{ type: 'bars', y: q.mm, cls: 'bar-rain' }] }],
+      hover: (i) => `<div class="tip-h"><b>${q.time[i].slice(11, 16)}</b></div><div class="tip-g"><span>Lluvia en 15 min</span><b>${mm(q.mm[i])}</b><span>Ritmo</span><b>${num((q.mm[i] || 0) * 4, 1)} mm/h</b></div>`,
+    }));
+  } else {
+    $('#q15-chart').innerHTML = '<p class="muted">Sin datos cada 15 minutos ahora mismo.</p>';
+  }
+  const n24 = it.next24;
+  keep(chart($('#h24-chart'), {
+    x: n24.time.map(ts), xTicks: hourTicks,
+    icons: { idx: n24.time.map((_, i) => i).filter((i) => i % 3 === 0), sym: n24.sym, day: n24.is_day },
+    panels: [
+      { h: 110, label: 'Lluvia mm/h', min: 0, minSpan: 1, series: [{ type: 'bars', y: n24.precip, cls: 'bar-rain' }, { type: 'dots', y: n24.hi, cls: 'dot-normal', r: 2.5 }] },
+      { h: 60, label: 'Probabilidad %', min: 0, max: 100, ticks: 2, series: [{ type: 'area', y: n24.pop.map((p) => (p == null ? null : p * 100)), cls: 'area-pop' }] },
+    ],
+    hover: (i) => `<div class="tip-h">${wx(n24.sym[i], n24.is_day[i], 24)}<b>${n24.time[i].slice(11, 16)}</b></div><div class="tip-g"><span>Lluvia (media)</span><b>${mm(n24.precip[i])}</b><span>Máximo entre modelos</span><b>${mm(n24.hi[i])}</b><span>Probabilidad</span><b>${pct(n24.pop[i])}</b></div>`,
+  }));
+
+  // Mapa con la línea de tiempo
+  const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  const ctl = createMap($('#rain-map'), { zoom: 9, base: dark ? 'Oscuro' : 'Callejero' });
+  state.maps.rain = ctl;
+  for (const x of villages()) {
+    const icon = L.divIcon({ className: 'rlabel-wrap', html: `<span class="rlabel${x.id === state.village ? ' sel' : ''}"><i></i>${esc(x.name)}</span>`, iconSize: null });
+    L.marker([x.lat, x.lon], { icon, keyboard: false, interactive: false, zIndexOffset: x.id === state.village ? 600 : 500 }).addTo(ctl.map);
+  }
+  const gb = gridBounds(grid);
+  requestAnimationFrame(() => {
+    ctl.map.invalidateSize();
+    ctl.map.fitBounds(gb, { padding: [8, 8] });
+  });
+  const area = L.rectangle(gb, { color: 'currentColor', weight: 1.2, dashArray: '5 5', fill: false, interactive: false, className: 'grid-box' });
+
+  let R = null;
+  try {
+    R = await loadRadar([40.272, -5.9], villages());
+  } catch (err) {
+    if (!alive()) return;
+    $('#rmove').textContent = 'Radar no disponible ahora mismo; se muestran solo los modelos.';
+  }
+  if (!alive()) return;
+  if (R) {
+    $('#rain-status').innerHTML = rainStatusHTML(it, R, today);
+    $('#rain-wins').innerHTML = it.rain.windows.map((w) => winTile(w, R.at[it.village.id])).join('');
+    $('#rain-table').innerHTML = rainTableHTML(data, R);
+    $('#rmove').textContent = R.quality === 'sin ecos' ? 'El radar no ve lluvia en la zona.' : `Lluvia moviéndose hacia el ${dirLong(R.heading)} a ${Math.round(R.speedKmh)} km/h`;
+  }
+
+  const frames = [];
+  if (R) {
+    R.past.forEach((f) => frames.push({ kind: 'radar', time: f.time, make: () => L.tileLayer(f.url, { opacity: 0, zIndex: 400, maxNativeZoom: 7, maxZoom: 18, attribution: 'Radar © <a href="https://www.rainviewer.com/">RainViewer</a>' }) }));
+    R.nowcast.forEach((f) => frames.push({ kind: 'nowcast', time: f.time, make: () => L.imageOverlay(f.url, R.bounds, { opacity: 0, zIndex: 400 }) }));
+  }
+  const nowMs = R ? R.lastTime : Date.now();
+  grid.time.forEach((t, k) => {
+    const end = madridMs(t, grid.utc_offset || 0);
+    const mid = end - 30 * 60e3;
+    if (mid > nowMs + 60 * 60e3 && mid <= nowMs + 25 * 3600e3) {
+      frames.push({ kind: 'model', time: mid, end, make: () => L.imageOverlay(modelFrameURL(grid, k), gb, { opacity: 0, zIndex: 400, attribution: 'Previsión AROME vía Open-Meteo' }) });
+    }
+  });
+  if (!frames.length) return;
+  const OPAC = { radar: 0.78, nowcast: 0.72, model: 0.75 };
+  const KIND = { radar: 'Radar', nowcast: 'Extrapolación del radar', model: 'Previsión del modelo' };
+  frames.forEach((f) => {
+    f.layer = f.make();
+    f.layer.addTo(ctl.map);
+  });
+  const nRadar = frames.filter((f) => f.kind === 'radar').length;
+  const slider = $('#rslider');
+  const play = $('#rplay');
+  slider.max = frames.length - 1;
+  slider.disabled = false;
+  play.disabled = false;
+  const counts = { radar: nRadar, nowcast: frames.filter((f) => f.kind === 'nowcast').length, model: frames.filter((f) => f.kind === 'model').length };
+  $('#segbar').innerHTML = [['radar', 'Radar · 2 h'], ['nowcast', 'Próxima hora'], ['model', 'Modelo · hasta 24 h']]
+    .filter(([k]) => counts[k]).map(([k, l]) => `<span class="seg-${k}" style="flex:${counts[k]}">${l}</span>`).join('');
+  let cur = -1;
+  const show = (i) => {
+    if (cur >= 0) frames[cur].layer.setOpacity(0);
+    cur = i;
+    const f = frames[i];
+    f.layer.setOpacity(OPAC[f.kind]);
+    slider.value = i;
+    if (f.kind === 'model') area.addTo(ctl.map);
+    else area.remove();
+    let label;
+    if (f.kind === 'radar') label = i === nRadar - 1 ? `Ahora · radar de las ${hhmm(f.time)}` : `${hhmm(f.time)} · hace ${Math.round((nowMs - f.time) / 60e3)} min`;
+    else if (f.kind === 'nowcast') label = `${hhmm(f.time)} · dentro de ${Math.round((f.time - nowMs) / 60e3)} min`;
+    else label = `${new Date(f.end - 3600e3).toLocaleDateString('es-ES', { weekday: 'short', timeZone: MAD })} ${hhmm(f.end - 3600e3)}–${hhmm(f.end)}`;
+    $('#rtime').innerHTML = `<b>${label}</b><span class="kind kind-${f.kind}">${KIND[f.kind]}</span>`;
+  };
+  show(R ? nRadar - 1 : 0);
+  slider.addEventListener('input', () => {
+    stopPlay();
+    show(Number(slider.value));
+  });
+  let timer = null;
+  const stopPlay = () => {
+    clearInterval(timer);
+    timer = null;
+    play.innerHTML = ui('play', 16);
+    play.setAttribute('aria-label', 'Reproducir la animación');
+  };
+  play.addEventListener('click', () => {
+    if (timer) return stopPlay();
+    play.innerHTML = ui('pause', 16);
+    play.setAttribute('aria-label', 'Pausar la animación');
+    if (cur >= frames.length - 1) show(0);
+    timer = setInterval(() => {
+      if (!alive()) return stopPlay();
+      show(cur >= frames.length - 1 ? 0 : cur + 1);
+    }, 650);
+  });
+  keep({ destroy: stopPlay });
 }
 
 // --- Vista: Modelos -------------------------------------------------------------

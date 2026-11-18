@@ -35,8 +35,14 @@ SOURCES = [
     {"id": "history", "name": "Serie histórica desde 1940", "via": "ERA5 (Copernicus) vía Open-Meteo",
      "url": "https://open-meteo.com/en/docs/historical-weather-api",
      "what": "Reanálisis diario: récords, normales 1991-2020 y tendencias."},
+    {"id": "q15", "name": "Lluvia cada 15 minutos", "via": "Open-Meteo (AROME, Météo-France)",
+     "url": "https://open-meteo.com/en/docs/meteofrance-api",
+     "what": "Lluvia de las próximas 8 horas en cada pueblo, a 1,3 km de resolución."},
+    {"id": "raingrid", "name": "Mapa de lluvia prevista", "via": "Open-Meteo (AROME / ARPEGE)",
+     "url": "https://open-meteo.com/en/docs/meteofrance-api",
+     "what": "Lluvia hora a hora en 120 puntos alrededor del valle para las próximas 36 horas."},
     {"id": "radar", "name": "Radar de precipitación", "via": "RainViewer", "url": "https://www.rainviewer.com/",
-     "what": "Mosaico de radar de las últimas 2 horas (se carga en el navegador)."},
+     "what": "Mosaico de radar de las últimas 2 horas y su extrapolación a una hora (se calcula en el navegador)."},
 ]
 
 
@@ -66,6 +72,14 @@ def skill():
 
 def recent():
     return _get("recent", config.TTL["recent"], openmeteo.fetch_recent)
+
+
+def q15():
+    return _get("q15", config.TTL["q15"], openmeteo.fetch_q15)
+
+
+def rain_grid():
+    return _get("raingrid", config.TTL["raingrid"], openmeteo.fetch_rain_grid)
 
 
 def aemet_daily(v):
@@ -149,7 +163,9 @@ def overview():
         days = [{k: d[k] for k in ("date", "k", "tmax", "tmin", "sym", "label", "pop", "prcp", "gust", "dir_name",
                                    "conf_label", "text", "normal_tmax", "normal_tmin", "snow_level", "sunrise",
                                    "sunset", "uv", "aemet")} for d in b["daily"][:8]]
-        out.append({"village": v, "now": b["now"], "next24": next24, "days": days,
+        rain = {"windows": [{k: w[k] for k in ("hours", "pop", "mm", "intensity")} for w in b["rain"]["windows"]],
+                "timing": b["rain"]["timing"]}
+        out.append({"village": v, "now": b["now"], "next24": next24, "days": days, "rain": rain,
                     "updated": b["updated"]})
     al, _ = warnings()
     return {"generated": blend.now_local().isoformat(timespec="seconds"), "villages": out,
@@ -164,6 +180,38 @@ def village(vid):
             "models": b["models"], "weights": b["weights"], "skill": b["skill"],
             "ensemble": b["ensemble_info"], "aemet": b["aemet"], "updated": b["updated"],
             "model_meta": [{k: m.get(k) for k in ("id", "name", "org", "res", "note")} for m in config.MODELS]}
+
+
+def lluvia():
+    """¿Lloverá? Ventanas de 1 a 24 h por pueblo, lluvia cada 15 min y mapa de lluvia prevista."""
+    with _build_lock:
+        _warm()
+    q, q_meta = q15()
+    grid, g_meta = rain_grid()
+    now = blend.now_local()
+    now_s = now.strftime("%Y-%m-%dT%H:%M")
+    out = []
+    for v in config.VILLAGES:
+        try:
+            b = village_blend(v)
+        except Exception as err:  # noqa: BLE001
+            out.append({"village": v, "error": str(err)})
+            continue
+        h = b["hourly"]
+        i = b["i_now"]
+        qv = (q or {}).get(v["id"]) or {"time": [], "mm": []}
+        keep = [k for k, t in enumerate(qv["time"]) if t > now_s][:24]
+        out.append({
+            "village": v, "now": {k: b["now"][k] for k in ("t", "sym", "is_day", "precip", "pop", "label")},
+            "rain": b["rain"],
+            "next24": {"time": h["time"][i + 1:i + 25], "precip": h["precip"][i + 1:i + 25],
+                       "pop": h["pop"][i + 1:i + 25], "hi": h["precip_hi"][i + 1:i + 25],
+                       "sym": h["sym"][i + 1:i + 25], "is_day": h["is_day"][i + 1:i + 25]},
+            "q15": {"time": [qv["time"][k] for k in keep], "mm": [qv["mm"][k] for k in keep]},
+        })
+    return {"generated": now.isoformat(timespec="seconds"), "now": now_s, "villages": out,
+            "grid": grid, "grid_updated": g_meta.get("updated"), "q15_updated": q_meta.get("updated"),
+            "windows": config.RAIN_WINDOWS, "pop_mix": config.POP_MIX, "model": config.RAIN_MODEL_NAME}
 
 
 def history_view(vid):

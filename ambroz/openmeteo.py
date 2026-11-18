@@ -142,12 +142,50 @@ def fetch_ensemble():
             "tmax_p10": _r(pct(maxs, 0.1)), "tmax_p50": _r(pct(maxs, 0.5)), "tmax_p90": _r(pct(maxs, 0.9)),
             "tmin_p10": _r(pct(mins, 0.1)), "tmin_p50": _r(pct(mins, 0.5)), "tmin_p90": _r(pct(mins, 0.9)),
         })
+    # Lluvia hora a hora de cada miembro (3 primeros días) para las ventanas de 1 a 24 h.
+    members_p = [[_r(x, 2) for x in a[:72]] for a in precs if any(x is not None for x in a[:72])]
     return {
         "point": config.ENSEMBLE_POINT, "elev": p["elev"], "models": config.ENSEMBLE_MODELS,
+        "members_time": times[:72], "members_p": members_p,
         "members": max(members) if members else 0, "time": times,
         "t_p10": t_p10, "t_p25": t_p25, "t_p50": t_p50, "t_p75": t_p75, "t_p90": t_p90,
         "p_prob": p_prob, "p_mean": p_mean, "daily": daily,
     }
+
+
+def fetch_q15():
+    """Lluvia cada 15 minutos de AROME (Météo-France) para las próximas 8 horas en los 8 pueblos."""
+    lats, lons, elevs = _coords(config.VILLAGES)
+    params = {
+        "latitude": lats, "longitude": lons, "elevation": elevs, "minutely_15": "precipitation",
+        "forecast_minutely_15": 32, "models": config.RAIN_MODEL, "timezone": config.TZ,
+    }
+    data = _as_list(net.openmeteo_json(FORECAST_URL, params, weight=net.om_weight(len(config.VILLAGES), 1, 1, 1)))
+    out = {}
+    for v, loc in zip(config.VILLAGES, data):
+        m = loc.get("minutely_15") or {}
+        out[v["id"]] = {"time": m.get("time", []), "mm": [_r(x, 2) for x in m.get("precipitation", [])]}
+    return out
+
+
+def fetch_rain_grid():
+    """Lluvia hora a hora prevista por AROME/ARPEGE en una rejilla alrededor del valle (mapa animado)."""
+    g = config.RAIN_GRID
+    lats = [round(g["lat0"] + g["dlat"] * j, 4) for j in range(g["ny"])]
+    lons = [round(g["lon0"] + g["dlon"] * i, 4) for i in range(g["nx"])]
+    pts = [(la, lo) for la in lats for lo in lons]
+    params = {
+        "latitude": ",".join(str(la) for la, _ in pts), "longitude": ",".join(str(lo) for _, lo in pts),
+        "hourly": "precipitation", "forecast_hours": g["hours"], "models": config.RAIN_MODEL, "timezone": config.TZ,
+    }
+    data = _as_list(net.openmeteo_json(FORECAST_URL, params, weight=net.om_weight(len(pts), 1, 1, 2)))
+    times = data[0]["hourly"]["time"]
+    frames = []
+    for k in range(len(times)):
+        frames.append([_r(loc["hourly"]["precipitation"][k], 1) or 0 for loc in data])
+    return {"model": config.RAIN_MODEL_NAME, "lat0": lats[0], "lon0": lons[0], "dlat": g["dlat"], "dlon": g["dlon"],
+            "nx": g["nx"], "ny": g["ny"], "time": times, "utc_offset": data[0].get("utc_offset_seconds", 0),
+            "frames": frames}
 
 
 def fetch_skill():

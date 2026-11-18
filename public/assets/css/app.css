@@ -213,8 +213,9 @@ tr:last-child td { border-bottom: 0; }
 /* Ahora ---------------------------------------------------------------------- */
 .now-grid {
   display: grid; gap: 18px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-  grid-template-areas: "hero valley" "next valley" "tomorrow efem" "stations stations";
+  grid-template-areas: "hero valley" "next valley" "rain valley" "tomorrow efem" "stations stations";
 }
+.rain-mini { grid-area: rain; }
 .hero { grid-area: hero; }
 .next24 { grid-area: next; }
 .tomorrow { grid-area: tomorrow; }
@@ -566,6 +567,66 @@ table.sources td:first-child a { font-weight: 600; text-decoration: none; }
 .page-foot { max-width: 1240px; margin: 0 auto; padding-block: 8px 28px; padding-left: var(--gutter); padding-right: var(--gutter-r); color: var(--muted); font-size: 12.5px; }
 .page-foot p { margin: 4px 0; max-width: 100ch; }
 
+/* ¿Lloverá? ------------------------------------------------------------------- */
+.rmini { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rmw, .rwin, .pc { background: color-mix(in srgb, var(--rain) calc(var(--p) * 0.9%), var(--surface-2)); }
+.rmw { border-radius: 12px; padding: 8px 10px; display: grid; font-variant-numeric: tabular-nums; }
+.rmw span { font-size: 12px; color: var(--ink-2); }
+.rmw b { font-family: var(--font-display); font-size: 22px; line-height: 1.15; }
+.rmw small { font-size: 12px; color: var(--ink-2); }
+.rmw.hi, .rwin.hi, .pc.hi { color: #fff; }
+.rmw.hi span, .rmw.hi small, .rwin.hi .rw-label, .rwin.hi small, .rwin.hi .rw-word, .pc.hi small { color: rgba(255, 255, 255, 0.88); }
+.rmini-txt { margin: 10px 0 0; color: var(--ink-2); font-size: 14px; }
+.rain-top { display: grid; gap: 14px; }
+.rain-status { display: flex; gap: 14px; align-items: center; }
+.rs-head { margin: 0; font-family: var(--font-display); font-size: clamp(19px, 2.4vw, 24px); font-weight: 650; line-height: 1.2; text-wrap: balance; }
+.rs-sub { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
+.rain-wins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.rwin { border-radius: 14px; padding: 12px 14px; display: grid; gap: 2px; align-content: start; font-variant-numeric: tabular-nums; }
+.rw-label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.rw-p { font-family: var(--font-display); font-size: 36px; line-height: 1.05; font-weight: 650; }
+.rw-word { font-weight: 650; font-size: 14px; }
+.rw-mm { font-size: 14px; }
+.rw-range, .rw-parts { font-size: 11.5px; color: var(--ink-2); }
+.rain-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.rtrack { flex: 1 1 260px; display: grid; gap: 4px; min-width: 0; }
+.rtrack input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+.segbar { display: flex; gap: 2px; font-size: 11px; font-weight: 600; }
+.segbar span { padding: 2px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.seg-radar { background: color-mix(in srgb, var(--rain) 18%, transparent); color: var(--rain); }
+.seg-nowcast { background: color-mix(in srgb, var(--wind) 18%, transparent); color: var(--wind); }
+.seg-model { background: color-mix(in srgb, var(--temp-line) 18%, transparent); color: var(--temp-line); }
+.rtime { display: grid; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 190px; }
+.kind { font-size: 11.5px; font-weight: 700; }
+.kind-radar { color: var(--rain); } .kind-nowcast { color: var(--wind); } .kind-model { color: var(--temp-line); }
+.rain-map { height: min(62vh, 560px); min-height: 360px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2); }
+.rain-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.rain-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.rain-legend i { width: 18px; height: 10px; border-radius: 3px; border: 1px solid var(--line); }
+.rlabel-wrap { background: none; border: 0; }
+.rlabel {
+  display: inline-flex; align-items: center; gap: 4px; transform: translate(-5px, -50%); font-size: 11.5px; font-weight: 650;
+  color: #14201b; white-space: nowrap; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff;
+}
+.rlabel i { width: 9px; height: 9px; border-radius: 50%; background: #14201b; border: 2px solid #fff; flex: none; }
+.rlabel.sel i { background: var(--accent); width: 12px; height: 12px; }
+.grid-box { color: var(--ink-2); }
+h3.sub.tight { margin: 4px 0 6px; font-size: 14px; color: var(--ink-2); }
+table.rain-table td, table.rain-table th { text-align: center; }
+table.rain-table td:first-child, table.rain-table th:first-child { text-align: left; }
+table.rain-table td:first-child a { font-weight: 600; text-decoration: none; }
+table.rain-table tr.on td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.pc { font-weight: 650; font-variant-numeric: tabular-nums; border: 2px solid var(--surface); border-radius: 8px; }
+.pc small { display: block; font-weight: 450; font-size: 11px; color: var(--ink-2); }
+.rchip { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.rchip.on { background: var(--rain); color: #fff; }
+.rchip.near { background: color-mix(in srgb, var(--wind) 18%, transparent); color: var(--wind); }
+@media (max-width: 760px) {
+  .rain-wins, .rmini { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rw-p { font-size: 30px; }
+  .rtime { min-width: 0; flex-basis: 100%; }
+}
+
 /* Iconos animados (solo en el bloque principal) -------------------------------- */
 .wx { flex: none; overflow: visible; }
 .wx.anim .ic-rays { transform-box: fill-box; transform-origin: center; animation: spin 40s linear infinite; }
@@ -584,7 +645,7 @@ table.sources td:first-child a { font-weight: 600; text-decoration: none; }
 
 /* Responsive --------------------------------------------------------------------- */
 @media (max-width: 1080px) {
-  .now-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "next" "valley" "tomorrow" "efem" "stations"; }
+  .now-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "next" "rain" "valley" "tomorrow" "efem" "stations"; }
   .detail { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
